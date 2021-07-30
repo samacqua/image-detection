@@ -98,7 +98,7 @@ class Visualizer:
         """
         return self.output
 
-    def draw_text(self, text, x, y, font_size=None, color="w", bg_color="g",
+    def _draw_text(self, text, x, y, font_size=None, color="w", bg_color="g",
                 alpha=1.0, horizontal_alignment="left", rotation=0):
 
         if not font_size:
@@ -109,7 +109,7 @@ class Visualizer:
             verticalalignment="bottom", horizontalalignment=horizontal_alignment,
             color='w', zorder=10, rotation=rotation)
 
-    def draw_box(self, box_coord, text=None, alpha=1.0, color="g", line_style="-"):
+    def _draw_box(self, box_coord, text=None, alpha=1.0, color="g", line_style="-"):
 
         x, y, w, h = box_coord
 
@@ -123,14 +123,22 @@ class Visualizer:
         )
 
         if text is not None:
-            self.draw_text(text, x, y, bg_color=color, alpha=alpha)
+            self._draw_text(text, x, y, bg_color=color, alpha=alpha)
 
-    def draw_bounding_boxes(self, bboxes, labels, colors, from_corners=False):
+    def draw_bounding_boxes(self, bboxes, labels=None, colors=None, from_corners=False):
+        self._stack.append(lambda thresh: self._draw_bounding_boxes(bboxes, labels, colors, from_corners))
+    def _draw_bounding_boxes(self, bboxes, labels, colors, from_corners=False):
+        if not isinstance(bboxes[0], (tuple, list)):
+            bboxes = [bboxes]
+        if labels is None
+            labels = [None] * len(bboxes)
+        if colors is None:
+            colors = ['g'] * len(bboxes)
         if from_corners:
             bboxes = [[x1, y1, x2-x1, y2-y1] for x1, y1, x2, y2 in bboxes]
         for bbox, label, color in zip(bboxes, labels, colors):
             x, y, w, h = bbox
-            self.draw_box(bbox, color=color, text=label, alpha=1)
+            self._draw_box(bbox, color=color, text=label, alpha=1)
 
     def draw_ground_truth(self, annotations, from_corners=True, missed_only=False,
                           predictions=None):
