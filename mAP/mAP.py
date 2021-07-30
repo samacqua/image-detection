@@ -30,8 +30,8 @@ def calculate_average_precision(recall, precision):
         ap += ((recall[i]-recall[i-1])*mono_increase_prec[i])
     return ap, list(recall), list(mono_increase_prec)
 
-def summarize_coco(coco_detection_fpath='coco_instances_results.json', 
-                coco_ground_truth_fpath='seed_test_coco_format.json', 
+def summarize_coco(coco_detection_fpath, 
+                coco_ground_truth_fpath, 
                 plot_dir=None, min_IoU=0.5):
     """
     compute object detection stats
@@ -77,7 +77,6 @@ def summarize_coco(coco_detection_fpath='coco_instances_results.json',
     # sort by confidence
     for class_name in detection_results:
         detection_results[class_name].sort(key=lambda x:float(x['score']), reverse=True)
-        print([x['score'] for x in detection_results[class_name]])
 
     # Create an "output/" directory
     if plot_dir:
@@ -189,7 +188,12 @@ def summarize_coco(coco_detection_fpath='coco_instances_results.json',
     return average_precision, predictions, ground_truth, recall_lists, precision_lists
 
 def main():
-    res = summarize_coco(plot_dir='output')
+    dirname = os.path.dirname(__file__)
+    coco_detection_fpath = os.path.join(dirname, '../data/coco_examples/coco_instances_results.json')
+    coco_ground_truth_fpath = os.path.join(dirname, '../data/coco_examples/seed_test_coco_format.json')
+    res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
+                        coco_ground_truth_fpath=coco_ground_truth_fpath,
+                         plot_dir='output')
     average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
     print('average precision:', str(round(100*average_precision, 2)) + '%')
 
