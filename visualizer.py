@@ -219,7 +219,7 @@ class Visualizer:
             f(conf_thresh)
 
         fig, ax = plt.subplots()
-        if len(self._categories) == 0:
+        if len(self._categories) > 0:
             categories, colors = zip(*self._categories)
             custom_lines = [Line2D([0], [0], color=c, lw=4) for c in colors]
             ax.legend(custom_lines, categories)
