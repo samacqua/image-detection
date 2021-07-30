@@ -133,12 +133,12 @@ class Visualizer:
             self.draw_box(bbox, color=color, text=label, alpha=1)
 
     def draw_ground_truth(self, annotations, from_corners=True, missed_only=False,
-                          predictions=None, image_id=None):
+                          predictions=None):
         self._stack.append(lambda thresh: self._draw_ground_truth(annotations, from_corners, missed_only,
-                          predictions, image_id, thresh))
+                          predictions, thresh))
 
     def _draw_ground_truth(self, annotations, from_corners=True, missed_only=False,
-                          predictions=None, image_id=None, thresh=0.5):
+                          predictions=None, thresh=0.5):
 
         bboxes = set([tuple(a['bbox']) for a in annotations])
 
@@ -232,23 +232,18 @@ class Visualizer:
 if __name__ == '__main__':
 
     import os
-    dirname = os.path.dirname(__file__)
-    mAP_path = os.path.join(dirname, '../mAP')
-
-    import sys
-    sys.path.insert(1, mAP_path)
     from mAP import summarize_coco
 
     # get ground truth and predictions
-    coco_detection_fpath = os.path.join(dirname, '../data/coco_examples/coco_instances_results.json')
-    coco_ground_truth_fpath = os.path.join(dirname, '../data/coco_examples/seed_test_coco_format.json')
+    coco_detection_fpath = 'data/coco_examples/coco_instances_results.json'
+    coco_ground_truth_fpath = 'data/coco_examples/seed_test_coco_format.json'
     res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
                         coco_ground_truth_fpath=coco_ground_truth_fpath,
                          plot_dir=None)
     average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
 
     # get random image
-    data_loc = os.path.join(dirname, '../data/dataset/')
+    data_loc = 'data/dataset/'
     random_id = np.random.choice(range(len(ground_truth)))
     random_img = ground_truth[random_id]
     random_img['file_name'] = os.path.join(data_loc, random_img['file_name'].split('/')[-1])

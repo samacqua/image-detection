@@ -188,9 +188,8 @@ def summarize_coco(coco_detection_fpath,
     return average_precision, predictions, ground_truth, recall_lists, precision_lists
 
 def main():
-    dirname = os.path.dirname(__file__)
-    coco_detection_fpath = os.path.join(dirname, '../data/coco_examples/coco_instances_results.json')
-    coco_ground_truth_fpath = os.path.join(dirname, '../data/coco_examples/seed_test_coco_format.json')
+    coco_detection_fpath = 'data/coco_examples/coco_instances_results.json'
+    coco_ground_truth_fpath = 'data/coco_examples/seed_test_coco_format.json'
     res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
                         coco_ground_truth_fpath=coco_ground_truth_fpath,
                          plot_dir='output')
