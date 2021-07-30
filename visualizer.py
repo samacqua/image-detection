@@ -219,10 +219,10 @@ class Visualizer:
             f(conf_thresh)
 
         fig, ax = plt.subplots()
-        categories, colors = zip(*self._categories)
-        
-        custom_lines = [Line2D([0], [0], color=c, lw=4) for c in colors]
-        ax.legend(custom_lines, categories)
+        if len(self._categories) == 0:
+            categories, colors = zip(*self._categories)
+            custom_lines = [Line2D([0], [0], color=c, lw=4) for c in colors]
+            ax.legend(custom_lines, categories)
 
         fig.set_size_inches(18, 10)
         ax.axis("off")
