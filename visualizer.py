@@ -128,9 +128,11 @@ class Visualizer:
     def draw_bounding_boxes(self, bboxes, labels=None, colors=None, from_corners=False):
         self._stack.append(lambda thresh: self._draw_bounding_boxes(bboxes, labels, colors, from_corners))
     def _draw_bounding_boxes(self, bboxes, labels, colors, from_corners=False):
+        if len(bboxes) == 0:
+            return
         if not isinstance(bboxes[0], (tuple, list)):
             bboxes = [bboxes]
-        if labels is None
+        if labels is None:
             labels = [None] * len(bboxes)
         if colors is None:
             colors = ['g'] * len(bboxes)
