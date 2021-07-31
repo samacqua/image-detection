@@ -5,8 +5,13 @@ from matplotlib.lines import Line2D
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from bbox import BBox, convert_bbox
 
 class VisImage:
+    """
+    trimmed copy of https://github.com/facebookresearch/detectron2/blob/9eb0027d795bb9a38098bb05e2ceb273bfc9cf41/detectron2/utils/visualizer.py
+    easier than installing all of detectron
+    """
     def __init__(self, img, scale=1.0):
         """
         Args:
@@ -50,7 +55,7 @@ class VisImage:
             filepath (str): a string that contains the absolute path, including the file name, where
                 the visualized image will be saved.
         """
-        self.fig.savefig(filepath)
+        self.fig.savefig(filepath, bbox_inches = 'tight', pad_inches = 0)
 
     def get_image(self):
         """
@@ -61,10 +66,6 @@ class VisImage:
         """
         canvas = self.canvas
         s, (width, height) = canvas.print_to_buffer()
-        # buf = io.BytesIO()  # works for cairo backend
-        # canvas.print_rgba(buf)
-        # width, height = self.width, self.height
-        # s = buf.getvalue()
 
         buffer = np.frombuffer(s, dtype="uint8")
 
@@ -73,7 +74,19 @@ class VisImage:
         return rgb.astype("uint8")
 
 class Visualizer:
+    """
+    class to draw bounding boxes on images
+    contains symbolic representations of bounding boxes, so can render
+    bounding boxes at different confidence scores
+    """
     def __init__(self, img, scale=1.0, color_transform=None):
+        """
+        Args:
+            img: the image to draw the bounding boxes on top of
+            scale: size which to scale the image
+            color_transform: cv2 color transform function (i.e. COLOR_BGR2RGB)
+                to originally apply to the image
+        """
         
         # set up VisImage
         self.img = img
@@ -83,12 +96,11 @@ class Visualizer:
         self.output = VisImage(self.img, scale=scale)
 
         self._default_font_size = max(
-            np.sqrt(self.output.height * self.output.width) // 90, 10 // scale
+            np.sqrt(self.output.height * self.output.width) // 100, 8 // scale
         )
 
-        self.scale = scale
-        self._stack = []
-        self._categories = set()
+        self._stack = []    # represents the functions to draw the bounding boxes
+        self._categories = set()    # set of (category name, category color) to put on legend
 
     def get_output(self):
         """
@@ -98,81 +110,75 @@ class Visualizer:
         """
         return self.output
 
-    def _draw_text(self, text, x, y, font_size=None, color="w", bg_color="g",
-                alpha=1.0, horizontal_alignment="left", rotation=0):
+    def _draw_text(self, text, x, y, font_size=None, bg_color="g", alpha=1.0, **kwargs):
+        """internal function to draw text onto the output VisImage at position x, y"""
 
-        if not font_size:
+        if font_size is None:
             font_size = self._default_font_size
 
-        self.output.ax.text(x, y, text, size=font_size * self.output.scale, family="sans-serif",
+        self.output.ax.text(x, y, text, size=font_size * self.output.scale,
             bbox={"facecolor": bg_color, "alpha": alpha, "pad": 0.7, "edgecolor": "none"},
-            verticalalignment="bottom", horizontalalignment=horizontal_alignment,
-            color='w', zorder=10, rotation=rotation)
+            verticalalignment="bottom", horizontalalignment="left",
+            color='w', zorder=10, **kwargs)
 
-    def _draw_box(self, box_coord, text=None, alpha=1.0, color="g", line_style="-"):
+    def _draw_box(self, x, y, w, h, **kwargs):
+        """internal function to draw a bounding box [x,y,w,h] onto the output VisImage"""
 
-        x, y, w, h = box_coord
-
-        linewidth = max(self._default_font_size / 3, 1.5)
+        linewidth = max(self._default_font_size / 5, 1.5)
 
         self.output.ax.add_patch(
-            mpl.patches.Rectangle((x, y), w, h, fill=False, edgecolor=color,
-                linewidth=linewidth * self.output.scale, alpha=alpha,
-                linestyle=line_style,
+            mpl.patches.Rectangle((x, y), w, h, fill=False,
+                linewidth=linewidth * self.output.scale, **kwargs
             )
         )
 
-        if text is not None:
-            self._draw_text(text, x, y, bg_color=color, alpha=alpha)
+    def draw_bbox(self, bbox, label=None, color='g', bbox_from=BBox.XYWH, bbox_args=None, text_args=None):
+        """external method for adding function to stack for drawing bounding box + label"""
+        self._stack.append(lambda thresh: self._draw_bbox(bbox, label, color, bbox_from, bbox_args, text_args))
+    def _draw_bbox(self, bbox, label, color, bbox_from, bbox_args, text_args):
+        """
+        method for drawing bounding box + label
+        Args:
+            bbox: the bounding box to draw
+            label: the label of the bounding box
+            color: the color of the label background and bounding box
+            bbox_from: the BBox format that bbox is in (i.e. X1Y1X2Y2)
+            bbox_args: dictionary of named arguments to be passed to _draw_box
+            text_args: dictionary of named arguments to be passed to _draw_text
+        """
+        x, y, w, h = convert_bbox(bbox, bbox_from, BBox.XYWH, image_size=(self.output.width, self.output.height)) # standardize bbox format
+        bbox_args = bbox_args if bbox_args is not None else {}
+        self._draw_box(x, y, w, h, edgecolor=color, **bbox_args)
 
-    def draw_bounding_boxes(self, bboxes, labels=None, colors=None, from_corners=False):
-        self._stack.append(lambda thresh: self._draw_bounding_boxes(bboxes, labels, colors, from_corners))
-    def _draw_bounding_boxes(self, bboxes, labels, colors, from_corners=False):
-        if len(bboxes) == 0:
-            return
-        if not isinstance(bboxes[0], (tuple, list)):
-            bboxes = [bboxes]
-        if labels is None:
-            labels = [None] * len(bboxes)
-        if colors is None:
-            colors = ['g'] * len(bboxes)
-        if from_corners:
-            bboxes = [[x1, y1, x2-x1, y2-y1] for x1, y1, x2, y2 in bboxes]
-        for bbox, label, color in zip(bboxes, labels, colors):
-            x, y, w, h = bbox
-            self._draw_box(bbox, color=color, text=label, alpha=1)
+        text_args = text_args if text_args is not None else {}
+        self._draw_text(label, x, y, bg_color=color, **text_args)
 
-    def draw_ground_truth(self, annotations, from_corners=True, missed_only=False,
-                          predictions=None):
-        self._stack.append(lambda thresh: self._draw_ground_truth(annotations, from_corners, missed_only,
-                          predictions, thresh))
-
-    def _draw_ground_truth(self, annotations, from_corners=True, missed_only=False,
-                          predictions=None, thresh=0.5):
+    def draw_ground_truth(self, annotations, missed_only=False,
+                          predictions=None, bbox_from=BBox.X1Y1X2Y2, **kwargs):
+        """external method for adding function to draw ground truth labels to stack"""
+        self._stack.append(lambda thresh: self._draw_ground_truth(annotations, missed_only,
+                          predictions, thresh, bbox_from, **kwargs))
+    def _draw_ground_truth(self, annotations, missed_only, predictions, thresh, bbox_from, **kwargs):
+        """
+        draw the ground truth bounding boxes
+        Args:
+            annotations: 'annotations' of COCO ground truth file
+            missed_only: flag whether to draw all ground truth bboxes or only ones with no 
+                detections, at the given level of confidence
+            predictions: list of predictions on self.img, only necessary if missed_only==True
+            thresh: confidence threshold for using predictions, only necessary if missed_only==True
+            bbox_from: the BBox format of which the bounding boxes are in the form of 
+            kwargs: arguments to be passed to _draw_bbox
+        """
 
         bboxes = set([tuple(a['bbox']) for a in annotations])
 
         if missed_only:
+            conf_preds = [p for p in predictions if p['score'] > thresh]    # preds with high enough confidence
 
-            if len(predictions) == 0:
-                return
-            
-            sorted_preds = sorted(predictions, key=lambda p: p['score'], reverse=True)
-
-            best_score = sorted_preds[0]['score']
-            for i in range(len(sorted_preds)):
-                # if conf out of 100, make out of 1
-                if best_score > 1:
-                    sorted_preds[i]['score'] /= 100
-
-                # filter out too low confidence
-                if sorted_preds[i]['score'] < thresh:
-                    sorted_preds = sorted_preds[:i]
-                    break
-
-            annot_ids = set([a['id'] for a in annotations])
-            for dt in sorted_preds:
-                if dt['match'] is not None and dt['match']['id'] in annot_ids and dt['score'] > thresh:
+            # remove all ground truth bboxes which were detected
+            for dt in conf_preds:
+                if dt['match'] is not None:
                     bboxes.remove(dt['match']['bbox'])
 
             color = 'orange'
@@ -181,48 +187,43 @@ class Visualizer:
             color = 'g'
             self._categories.add(('ground truth', color))
 
-        labels = [None] * len(bboxes)
-        colors = [color] * len(bboxes)
+        for bbox in bboxes:
+            self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=kwargs, text_args=None)
 
-        self.draw_bounding_boxes(list(bboxes), labels, colors, from_corners=from_corners)
-
-    def draw_predictions(self, predictions, from_corners=True):
-        self._stack.append(lambda thresh: self._draw_predictions(predictions, from_corners, thresh))
-    
-    def _draw_predictions(self, predictions, from_corners=True, thresh=0.5):
-
-        if len(predictions) == 0:
-            return
-        
+    def draw_predictions(self, predictions, bbox_from=BBox.X1Y1X2Y2, bbox_args=None, text_args=None):
+        self._stack.append(lambda thresh: self._draw_predictions(predictions, thresh, bbox_from, bbox_args, text_args))
+    def _draw_predictions(self, predictions, thresh, bbox_from, bbox_args, text_args):
+        """
+        draw a list of COCO detections
+        Args:
+            predictions: list of predictions on self.img in the COCO format
+            thresh: the confidence threshold that predictions must exceed to be drawn
+            bbox_from: the BBox format that each prediction's bbox is in
+            bbox_args: dictionary of named arguments to be passed to _draw_box
+            text_args: dictionary of named arguments to be passed to _draw_text
+        """
         # draw most confident first
-        sorted_preds = sorted(predictions, key=lambda p: p['score'], reverse=True)
+        conf_preds = [p for p in predictions if p['score'] > thresh]
+        sorted_preds = sorted(conf_preds, key=lambda p: p['score'], reverse=True)
 
-        best_score = sorted_preds[0]['score']
-        for i in range(len(sorted_preds)):
-            # if conf out of 100, make out of 1
-            if best_score > 1:
-                sorted_preds[i]['score'] /= 100
-
-            # filter out too low confidence
-            if sorted_preds[i]['score'] < thresh:
-                sorted_preds = sorted_preds[:i]
-                break
-
-        bboxes, scores = [], []
-        for p in sorted_preds:
-            bboxes.append(p['bbox'])
-            scores.append(round(p['score'], 2))
-
-        colors = ['r' if p['match'] is None else 'b' for p in sorted_preds]
+        for p in conf_preds:
+            color = 'r' if p['match'] is None else 'b'
+            self._draw_bbox(p['bbox'], label=round(p['score'], 2), 
+            color=color, bbox_from=bbox_from, bbox_args=bbox_args, text_args=text_args)
         
-        self._categories |= set([('true positives', 'b'), ('false positives', 'r')])
+        self._categories |= {('true positives', 'b'), ('false positives', 'r')}
 
-        self.draw_bounding_boxes(bboxes, scores, colors, from_corners=from_corners)
-
-    def show(self, conf_thresh=0.5):
+    def show(self, conf_thresh=0.5, show=True):
+        """
+        go through the stack of drawing functions and draw each set of bounding boxes at the 
+        given confidence level and show the image.
+        Args:
+            conf_thresh: minimum confidence to draw detections
+            show: whether to run plt.show()
+        """
 
         # reset output
-        self.output = VisImage(self.img, scale=self.scale)
+        self.output = VisImage(self.img, scale=self.output.scale)
 
         # actually add all the things
         for f in self._stack:
@@ -237,7 +238,15 @@ class Visualizer:
         fig.set_size_inches(18, 10)
         ax.axis("off")
         ax.imshow(self.get_output().get_image())
-        plt.show()
+        self.output.fig = fig
+        self.output.ax = ax
+        if show:
+            plt.show()
+
+    def save(self, save_path, conf_thresh=0.5):
+        """save the output at conf_thresh to save_path"""
+        self.show(conf_thresh, show=False)
+        self.output.save(save_path)
 
 if __name__ == '__main__':
 
@@ -255,6 +264,7 @@ if __name__ == '__main__':
     # get random image
     data_loc = 'data/dataset/'
     random_id = np.random.choice(range(len(ground_truth)))
+    print(random_id)
     random_img = ground_truth[random_id]
     random_img['file_name'] = os.path.join(data_loc, random_img['file_name'].split('/')[-1])
     random_img_dts = [p for p in predictions if p['image_id'] == random_id]
@@ -266,6 +276,12 @@ if __name__ == '__main__':
 
     vis = Visualizer(img, color_transform=cv2.COLOR_BGR2RGB)
     vis.draw_ground_truth(random_img['annotations'], missed_only=True, 
-                        predictions=random_img_dts)
-    vis.draw_predictions(random_img_dts)
-    vis.show(0.5)
+                        predictions=random_img_dts, bbox_from=BBox.X1Y1X2Y2)
+    vis.draw_predictions(random_img_dts, bbox_from=BBox.X1Y1X2Y2, bbox_args={'linestyle': ":"}, text_args={'fontfamily': 'cursive'})
+    vis.draw_bbox([100, 100, 110, 110], label='bbox', color='pink', bbox_from=BBox.X1Y1X2Y2)
+    
+    os.makedirs('output', exist_ok=True)
+    for i in [0.1, 0.5, 0.99]:
+        vis.show(i)
+        
+        vis.save(f'output/im{i}.png', conf_thresh=i)
