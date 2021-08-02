@@ -30,6 +30,34 @@ def calculate_average_precision(recall, precision):
         ap += ((recall[i]-recall[i-1])*mono_increase_prec[i])
     return ap, list(recall), list(mono_increase_prec)
 
+
+def compute_IoU(bbox_a, bbox_b):
+    """
+    compute the intersection between 2 bounding boxes
+    Args:
+        bbox_a: bounding box of form x1, y1, x2, y2
+        bbox_b: bounding box of form x1, y1, x2, y2
+    """
+
+    x1a, y1a, x2a, y2a = bbox_a
+    x1b, y1b, x2b, y2b = bbox_b
+
+    # calculate intersection area
+    xA = max(x1a, x1b)
+    yA = max(y1a, y1b)
+    xB = min(x2a, x2b)
+    yB = min(y2a, y2b)
+    inter_area = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+
+    # calculate union area
+    bbox_a_area = (x2a - x1a + 1) * (y2a - y1a + 1)
+    bbox_b_area = (x2b - x1b + 1) * (y2b - y1b + 1)
+    union_area = bbox_a_area + bbox_b_area - inter_area
+
+    IoU = inter_area / union_area
+
+    return IoU
+
 def summarize_coco(coco_detection_fpath, 
                 coco_ground_truth_fpath, 
                 plot_dir=None, min_IoU=0.5):
@@ -115,23 +143,12 @@ def summarize_coco(coco_detection_fpath,
                 # look for a class_name match
                 if obj["class_name"] == class_name:
                     bbgt = obj["bbox"]  # ground truth bounding box
-                    intersect_bb = [max(bb[0],bbgt[0]), max(bb[1],bbgt[1]), min(bb[2],bbgt[2]), min(bb[3],bbgt[3])]
-                    intersect_w = intersect_bb[2] - intersect_bb[0] + 1
-                    intersect_h = intersect_bb[3] - intersect_bb[1] + 1
+                    IoU = compute_IoU(bb, bbgt)
 
-                    if intersect_w > 0 and intersect_h > 0:   # if any ocerlap
-                        # compute overlap (IoU) = area of intersection / area of union
-                        intersection_area = intersect_w * intersect_h
-
-                        area_pred = (bb[2] - bb[0] + 1) * (bb[3] - bb[1] + 1)
-                        area_gt = (bbgt[2] - bbgt[0] + 1) * (bbgt[3] - bbgt[1] + 1)
-                        union_area = area_pred + area_gt - intersection_area
-                        IoU = intersection_area / union_area
-
-                        if IoU > best_overlap:
-                            best_overlap = IoU
-                            best_gt_match = obj
-                            best_match_idx = gt_idx
+                    if IoU > best_overlap and IoU > 0:  # only update if best and any overlap
+                        best_overlap = IoU
+                        best_gt_match = obj
+                        best_match_idx = gt_idx
                 
             # assign detection as true positive/false positive
             if best_overlap >= min_IoU:
