@@ -7,6 +7,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from enum import Enum, auto
 
+from mAP import summarize_coco
+
 class BBox(Enum):
     """
     enumeration of different bbox types
@@ -193,11 +195,11 @@ class Visualizer:
         self._draw_text(label, x, y, bg_color=color, **text_args)
 
     def draw_ground_truth(self, annotations, missed_only=False,
-                          predictions=None, bbox_from=BBox.X1Y1X2Y2, **kwargs):
+                          predictions=None, bbox_from=BBox.X1Y1X2Y2, **bbox_args):
         """external method for adding function to draw ground truth labels to stack"""
         self._stack.append(lambda thresh: self._draw_ground_truth(annotations, missed_only,
-                          predictions, thresh, bbox_from, **kwargs))
-    def _draw_ground_truth(self, annotations, missed_only, predictions, thresh, bbox_from, **kwargs):
+                          predictions, thresh, bbox_from, **bbox_args))
+    def _draw_ground_truth(self, annotations, missed_only, predictions, thresh, bbox_from, **bbox_args):
         """
         draw the ground truth bounding boxes
         Args:
@@ -227,7 +229,7 @@ class Visualizer:
             self._categories.add(('ground truth', color))
 
         for bbox in bboxes:
-            self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=kwargs, text_args=None)
+            self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=bbox_args, text_args=None)
 
     def draw_predictions(self, predictions, bbox_from=BBox.X1Y1X2Y2, bbox_args=None, text_args=None):
         self._stack.append(lambda thresh: self._draw_predictions(predictions, thresh, bbox_from, bbox_args, text_args))
@@ -287,6 +289,119 @@ class Visualizer:
         self.show(conf_thresh, show=False)
         self.output.save(save_path)
 
+class COCOVisualizer:
+    """class that controls Visualizer objects to make showing entire dataset easier"""
+    def __init__(self, coco_ground_truth_fpath, coco_detection_fpath, min_IoU=0.5):
+        """
+        Args:
+            coco_ground_truth_fpath: path to COCO gt file
+            coco_detection_fpath: path to COCO dt file
+            min_IoU: the minimum IoU that is considered a detection
+        """
+        res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
+                        coco_ground_truth_fpath=coco_ground_truth_fpath,
+                         plot_dir=None, min_IoU=min_IoU)
+        _, self.predictions, self.ground_truth, *_ = [x['seed'] if 'seed' in x else x for x in res]
+
+        # sort by confidence
+        self.predictions.sort(key=lambda x:float(x['score']), reverse=True)
+
+        # pre-calculate for O(1) look up
+        self.predictions_by_imid = {im_id: [p for p in self.predictions if p['image_id'] == im_id] for im_id in range(len(self.ground_truth))}
+
+    def show_image(self, im_id, ground_truth=True, false_negatives_only=True, detections=True, conf_thresh=0.5, save_path=None):
+        """
+        show the image with the given id
+        Args:
+            ground_truth: True to show ground truth bboxes
+            false_negatives_only: if True (and ground_truth is True), then will only show ground 
+                truth bboxes that were not matched from any prediction
+            detection: True to show detection bboxes
+            conf_thresh: minimum confidence threshold to show detections / use detection to
+                calculate if ground truth label is detected
+            save_path: where to save the image visualization, will not save if None
+        """
+        gt_obj = self.ground_truth[im_id]
+        predictions = self.predictions_by_imid[im_id]
+        # im_name = gt_obj['file_name']
+        im_name = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
+        
+        visualizer = Visualizer(cv2.imread(im_name), color_transform=cv2.COLOR_BGR2RGB)
+        if ground_truth:
+            visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=false_negatives_only, predictions=predictions)
+
+        if detections:
+            visualizer.draw_predictions(predictions)
+
+        show(conf_thresh)
+        if save_path is not None:
+            visualizer.save(save_path, conf_thresh)
+
+    def show_highest_conf_misses(self, n=1, save_dir=None):
+        """
+        show the highest confidence detections that were false positives
+        Args:
+            n: the number of high confidence false positives to show
+            save_dir: directory to save the visualizations in, None not to save
+        """
+
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+
+        already_shown = set()
+        for conf_i in range(n):
+            i, first_wrong_prec = next((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown)
+            already_shown.add(i)
+
+            first_wrong_im_obj = self.ground_truth[first_wrong_prec['image_id']]
+            # im_path = first_wrong_im_obj['file_name']
+            im_path = 'data/dataset/' + first_wrong_im_obj['file_name'].split('/')[-1]
+            im = cv2.imread(im_path)
+            bbox = list(first_wrong_prec['bbox'])
+            visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
+            visualizer.draw_ground_truth(first_wrong_im_obj['annotations'])
+            visualizer.draw_bbox(bbox, label=round(first_wrong_prec['score'], 2), color='r', bbox_from=BBox.X1Y1X2Y2)
+            visualizer.show()
+
+            if save_dir is not None:
+                visualizer.save(os.path.join(save_dir, f'high_conf_miss_{conf_i}.png'))
+
+    def show_unfound(self, conf_thresh=0, draw_predictions=False, save_dir=None):
+        """
+        show all bounding boxes that were not detected at the given level of confidence (false negatives)
+        Args:
+            conf_thresh: the threshold at which to a predictions must be to be counted
+            save_dir: directory to save the visualizations in, None not to save
+        """
+
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+
+        for im_id, gt_obj in enumerate(self.ground_truth):
+
+            # remove all detected bboxes (at given threshold) to get a set of undetected bboxes
+            im_unfound_bboxes = set([ann['id'] for ann in gt_obj['annotations']])
+            for dt in self.predictions_by_imid[im_id]:
+                gt_match = dt['match']
+                if gt_match is not None and dt['score'] > conf_thresh:
+                    im_unfound_bboxes.remove(gt_match['id'])
+
+            # show the undetected bboxes
+            if len(im_unfound_bboxes) > 0 and im_id==10:
+                # im_path = gt_obj['file_name']
+                im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
+                im = cv2.imread(im_path)
+                visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
+                visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=True, predictions=self.predictions_by_imid[im_id])
+                if draw_predictions:
+                    visualizer.draw_predictions(self.predictions_by_imid[im_id])
+                visualizer.show(conf_thresh)
+
+                if save_dir is not None:
+                    im_name = im_path.split('/')[-1][:-4]
+                    visualizer.save(os.path.join(save_dir, f'missed_seeds_{im_name}_conf={conf_thresh}.png'))
+    
+
 if __name__ == '__main__':
 
     import os
@@ -324,3 +439,12 @@ if __name__ == '__main__':
         vis.show(i)
         
         vis.save(f'output/im{i}.png', conf_thresh=i)
+
+    coco_vis = COCOVisualizer(coco_ground_truth_fpath, coco_detection_fpath, min_IoU=0.25)
+
+    for i in range(5):
+        coco_vis.show_image(i, detections=False, false_negatives_only=False, conf_thresh=0.5)
+
+    coco_vis.show_highest_conf_misses(3, save_dir='output')
+    for i in [0, 0.5]:
+        coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
