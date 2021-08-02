@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from enum import Enum, auto
+import os
 
 from mAP import summarize_coco
 from bbox import convert_bbox, BBox
@@ -283,9 +284,12 @@ class COCOVisualizer:
                 calculate if ground truth label is detected
             save_path: where to save the image visualization, will not save if None
         """
+        print("HHIIHIH")
+        return
         gt_obj = self.ground_truth[im_id]
         predictions = self.predictions_by_imid[im_id]
         im_path = gt_obj['file_name']
+        print(im_path)
         # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
         
         visualizer = Visualizer(cv2.imread(im_path), color_transform=cv2.COLOR_BGR2RGB)
@@ -295,7 +299,7 @@ class COCOVisualizer:
         if detections:
             visualizer.draw_predictions(predictions)
 
-        show(conf_thresh)
+        visualizer.show(conf_thresh)
         if save_path is not None:
             visualizer.save(save_path, conf_thresh)
 
@@ -366,47 +370,44 @@ class COCOVisualizer:
 
 if __name__ == '__main__':
 
-    import os
-    from mAP import summarize_coco
-
     # get ground truth and predictions
     coco_detection_fpath = 'data/coco_examples/coco_instances_results.json'
     coco_ground_truth_fpath = 'data/coco_examples/seed_test_coco_format.json'
-    res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
-                        coco_ground_truth_fpath=coco_ground_truth_fpath,
-                         plot_dir=None)
-    average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
+    # res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
+    #                     coco_ground_truth_fpath=coco_ground_truth_fpath,
+    #                      plot_dir=None)
+    # average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
 
-    # get random image
-    data_loc = 'data/dataset/'
-    random_id = np.random.choice(range(len(ground_truth)))
-    print(random_id)
-    random_img = ground_truth[random_id]
-    random_img['file_name'] = os.path.join(data_loc, random_img['file_name'].split('/')[-1])
-    random_img_dts = [p for p in predictions if p['image_id'] == random_id]
+    # # get random image
+    # data_loc = 'data/dataset/'
+    # random_id = np.random.choice(range(len(ground_truth)))
+    # print(random_id)
+    # random_img = ground_truth[random_id]
+    # random_img['file_name'] = os.path.join(data_loc, random_img['file_name'].split('/')[-1])
+    # random_img_dts = [p for p in predictions if p['image_id'] == random_id]
 
-    print('gt:', [gt['bbox'] for gt in random_img['annotations']])
-    print('dt:', [dt['bbox'] for dt in random_img_dts])
+    # print('gt:', [gt['bbox'] for gt in random_img['annotations']])
+    # print('dt:', [dt['bbox'] for dt in random_img_dts])
 
-    img = cv2.imread(random_img['file_name'])
+    # img = cv2.imread(random_img['file_name'])
 
-    vis = Visualizer(img, color_transform=cv2.COLOR_BGR2RGB)
-    vis.draw_ground_truth(random_img['annotations'], missed_only=True, 
-                        predictions=random_img_dts, bbox_from=BBox.X1Y1X2Y2)
-    vis.draw_predictions(random_img_dts, bbox_from=BBox.X1Y1X2Y2, bbox_args={'linestyle': ":"}, text_args={'fontfamily': 'cursive'})
-    vis.draw_bbox([100, 100, 110, 110], label='bbox', color='pink', bbox_from=BBox.X1Y1X2Y2)
+    # vis = Visualizer(img, color_transform=cv2.COLOR_BGR2RGB)
+    # vis.draw_ground_truth(random_img['annotations'], missed_only=True, 
+    #                     predictions=random_img_dts, bbox_from=BBox.X1Y1X2Y2)
+    # vis.draw_predictions(random_img_dts, bbox_from=BBox.X1Y1X2Y2, bbox_args={'linestyle': ":"}, text_args={'fontfamily': 'cursive'})
+    # vis.draw_bbox([100, 100, 110, 110], label='bbox', color='pink', bbox_from=BBox.X1Y1X2Y2)
     
-    os.makedirs('output', exist_ok=True)
-    for i in [0.1, 0.5, 0.99]:
-        vis.show(i)
+    # os.makedirs('output', exist_ok=True)
+    # for i in [0.1, 0.5, 0.99]:
+    #     vis.show(i)
         
-        vis.save(f'output/im{i}.png', conf_thresh=i)
+    #     vis.save(f'output/im{i}.png', conf_thresh=i)
 
     coco_vis = COCOVisualizer(coco_ground_truth_fpath, coco_detection_fpath, min_IoU=0.25)
 
     for i in range(5):
         coco_vis.show_image(i, detections=False, false_negatives_only=False, conf_thresh=0.5)
 
-    coco_vis.show_highest_conf_misses(3, save_dir='output')
-    for i in [0, 0.5]:
-        coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
+    # coco_vis.show_highest_conf_misses(3, save_dir='output')
+    # for i in [0, 0.5]:
+    #     coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
