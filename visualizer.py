@@ -285,10 +285,10 @@ class COCOVisualizer:
         """
         gt_obj = self.ground_truth[im_id]
         predictions = self.predictions_by_imid[im_id]
-        # im_name = gt_obj['file_name']
-        im_name = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
+        im_path = gt_obj['file_name']
+        # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
         
-        visualizer = Visualizer(cv2.imread(im_name), color_transform=cv2.COLOR_BGR2RGB)
+        visualizer = Visualizer(cv2.imread(im_path), color_transform=cv2.COLOR_BGR2RGB)
         if ground_truth:
             visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=false_negatives_only, predictions=predictions)
 
@@ -316,8 +316,8 @@ class COCOVisualizer:
             already_shown.add(i)
 
             first_wrong_im_obj = self.ground_truth[first_wrong_prec['image_id']]
-            # im_path = first_wrong_im_obj['file_name']
-            im_path = 'data/dataset/' + first_wrong_im_obj['file_name'].split('/')[-1]
+            im_path = first_wrong_im_obj['file_name']
+            # im_path = 'data/dataset/' + first_wrong_im_obj['file_name'].split('/')[-1]
             im = cv2.imread(im_path)
             bbox = list(first_wrong_prec['bbox'])
             visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
@@ -350,8 +350,8 @@ class COCOVisualizer:
 
             # show the undetected bboxes
             if len(im_unfound_bboxes) > 0 and im_id==10:
-                # im_path = gt_obj['file_name']
-                im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
+                im_path = gt_obj['file_name']
+                # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
                 im = cv2.imread(im_path)
                 visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
                 visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=True, predictions=self.predictions_by_imid[im_id])
