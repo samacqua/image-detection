@@ -283,12 +283,14 @@ class COCOVisualizer:
             conf_thresh: minimum confidence threshold to show detections / use detection to
                 calculate if ground truth label is detected
             save_path: where to save the image visualization, will not save if None
+        Returns:
+            ground truth object at im_id
+            all predictions on im_id, regardless of confidence level
         """
 
         gt_obj = self.ground_truth[im_id]
         predictions = self.predictions_by_imid[im_id]
         im_path = gt_obj['file_name']
-        print(im_path)
         # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
         
         visualizer = Visualizer(cv2.imread(im_path), color_transform=cv2.COLOR_BGR2RGB)
@@ -302,34 +304,43 @@ class COCOVisualizer:
         if save_path is not None:
             visualizer.save(save_path, conf_thresh)
 
+        return gt_obj, predictions
+
     def show_highest_conf_misses(self, n=1, save_dir=None):
         """
         show the highest confidence detections that were false positives
         Args:
             n: the number of high confidence false positives to show
             save_dir: directory to save the visualizations in, None not to save
+        Returns:
+            list of n tuples ordered by descending confidence: (prediction, ground truth object)
         """
 
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
 
         already_shown = set()
+        shown_data = []
         for conf_i in range(n):
-            i, first_wrong_prec = next((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown)
+            i, first_wrong_pred = next((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown)
             already_shown.add(i)
 
-            first_wrong_im_obj = self.ground_truth[first_wrong_prec['image_id']]
+            first_wrong_im_obj = self.ground_truth[first_wrong_pred['image_id']]
             im_path = first_wrong_im_obj['file_name']
             # im_path = 'data/dataset/' + first_wrong_im_obj['file_name'].split('/')[-1]
             im = cv2.imread(im_path)
-            bbox = list(first_wrong_prec['bbox'])
+            bbox = list(first_wrong_pred['bbox'])
             visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
             visualizer.draw_ground_truth(first_wrong_im_obj['annotations'])
-            visualizer.draw_bbox(bbox, label=round(first_wrong_prec['score'], 2), color='r', bbox_from=BBox.X1Y1X2Y2)
+            visualizer.draw_bbox(bbox, label=round(first_wrong_pred['score'], 2), color='r', bbox_from=BBox.X1Y1X2Y2)
             visualizer.show()
+
+            shown_data.append((first_wrong_pred, first_wrong_im_obj))
 
             if save_dir is not None:
                 visualizer.save(os.path.join(save_dir, f'high_conf_miss_{conf_i}.png'))
+
+        return shown_data
 
     def show_unfound(self, conf_thresh=0, draw_predictions=False, save_dir=None):
         """
@@ -337,22 +348,27 @@ class COCOVisualizer:
         Args:
             conf_thresh: the threshold at which to a predictions must be to be counted
             save_dir: directory to save the visualizations in, None not to save
+        Returns:
+            list of sets of unfound bounding boxes, where index into list is the image id
         """
 
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
 
+        unfound_bboxes = []
         for im_id, gt_obj in enumerate(self.ground_truth):
 
             # remove all detected bboxes (at given threshold) to get a set of undetected bboxes
-            im_unfound_bboxes = set([ann['id'] for ann in gt_obj['annotations']])
+            im_unfound_bboxes = set([tuple(ann['bbox']) for ann in gt_obj['annotations']])
             for dt in self.predictions_by_imid[im_id]:
                 gt_match = dt['match']
                 if gt_match is not None and dt['score'] > conf_thresh:
-                    im_unfound_bboxes.remove(gt_match['id'])
+                    im_unfound_bboxes.remove(tuple(gt_match['bbox']))
+
+            unfound_bboxes.append(im_unfound_bboxes)
 
             # show the undetected bboxes
-            if len(im_unfound_bboxes) > 0 and im_id==10:
+            if len(im_unfound_bboxes) > 0:
                 im_path = gt_obj['file_name']
                 # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
                 im = cv2.imread(im_path)
@@ -365,7 +381,8 @@ class COCOVisualizer:
                 if save_dir is not None:
                     im_name = im_path.split('/')[-1][:-4]
                     visualizer.save(os.path.join(save_dir, f'missed_seeds_{im_name}_conf={conf_thresh}.png'))
-    
+
+        return unfound_bboxes
 
 if __name__ == '__main__':
 
@@ -404,9 +421,9 @@ if __name__ == '__main__':
 
     coco_vis = COCOVisualizer(coco_ground_truth_fpath, coco_detection_fpath, min_IoU=0.25)
 
-    for i in range(5):
-        coco_vis.show_image(i, detections=False, false_negatives_only=False, conf_thresh=0.5)
+    # for i in range(5):
+    #     coco_vis.show_image(i, detections=False, false_negatives_only=False, conf_thresh=0.5)
 
     # coco_vis.show_highest_conf_misses(3, save_dir='output')
-    # for i in [0, 0.5]:
-    #     coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
+    for i in [0]:
+        coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
