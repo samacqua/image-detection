@@ -284,8 +284,7 @@ class COCOVisualizer:
                 calculate if ground truth label is detected
             save_path: where to save the image visualization, will not save if None
         """
-        print("HHIIHIH")
-        return
+
         gt_obj = self.ground_truth[im_id]
         predictions = self.predictions_by_imid[im_id]
         im_path = gt_obj['file_name']
