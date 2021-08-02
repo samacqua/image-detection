@@ -1,4 +1,4 @@
-
+from enum import Enum, auto
 class BBox(Enum):
     """
     enumeration of different bbox types
