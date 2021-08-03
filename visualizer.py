@@ -322,7 +322,7 @@ class COCOVisualizer:
         already_shown = set()
         shown_data = []
         for conf_i in range(n):
-            i, first_wrong_pred = next((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown, (-1, None))
+            i, first_wrong_pred = next(((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown), (-1, None))
             if first_wrong_pred is None:
                 print("NO MORE FALSE POSITIVES")
                 return shown_data
