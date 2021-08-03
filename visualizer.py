@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 from enum import Enum, auto
 import os
 
-from mAP import summarize_coco
-from bbox import convert_bbox, BBox
+from .mAP import summarize_coco
+from .bbox import convert_bbox, BBox
 
 class VisImage:
     """
