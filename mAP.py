@@ -127,10 +127,10 @@ def summarize_coco(coco_detection_fpath,
 
         # assign detection-results to ground-truth objects
         
-        nd = len(detection_results[class_name])
+        nd = len(detection_results.get(class_name, []))
         tp = np.zeros(nd)   # true positives
         fp = np.zeros(nd)   # false positives
-        for idx, detection in enumerate(detection_results[class_name]):
+        for idx, detection in enumerate(detection_results.get(class_name, [])):
 
             # assign detection-results to ground truth object if any
             img_ground_truth = ground_truth[detection["image_id"]]['annotations']
