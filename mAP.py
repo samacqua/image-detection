@@ -190,7 +190,7 @@ def summarize_coco(coco_detection_fpath,
             fig = plt.gcf()
             fig.canvas.set_window_title('AP ' + class_name)
 
-            text = f'class: {class_name} AP={round(ap, 2)}% (IoU={min_IoU})'
+            text = f'class: {class_name} AP={round(ap*100, 2)}% (IoU={min_IoU})'
             plt.title(text)
             plt.xlabel('Recall')
             plt.ylabel('Precision')
