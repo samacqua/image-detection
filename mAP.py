@@ -119,7 +119,7 @@ def summarize_coco(coco_detection_fpath,
 
     # calculate AP per class
     average_precision = {}
-    predictions = {}
+    predictions = {class_name: [] for class_name in gt_classes}
     recall_lists = {}
     precision_lists = {}
 
@@ -166,7 +166,7 @@ def summarize_coco(coco_detection_fpath,
             # save detection object with detection result
             detection_w_result = detection.copy()
             detection_w_result['match'] = best_gt_match if tp[idx] == 1 else None
-            predictions.setdefault(class_name, []).append(detection_w_result)
+            predictions[class_name].append(detection_w_result)
 
         # compute total tp and fp, precision/recall
         fp = np.cumsum(fp)
@@ -210,6 +210,7 @@ def main():
     res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
                         coco_ground_truth_fpath=coco_ground_truth_fpath,
                          plot_dir='output')
+    print(res[0], res[1], res[3], res[4])
     average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
     print('average precision:', str(round(100*average_precision, 2)) + '%')
 
