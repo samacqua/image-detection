@@ -106,6 +106,10 @@ class Visualizer:
         self._stack = []    # represents the functions to draw the bounding boxes
         self._categories = set()    # set of (category name, category color) to put on legend
 
+    def add_category(self, name, color):
+        """add a category to the list of categories so that, when showing image, category shows up in legend"""
+        self._categories.add((name, color))
+
     def get_output(self):
         """
         Returns:
@@ -157,66 +161,99 @@ class Visualizer:
         text_args = text_args if text_args is not None else {}
         self._draw_text(label, x, y, bg_color=color, **text_args)
 
-    def draw_ground_truth(self, annotations, missed_only=False,
+    def draw_ground_truth(self, annotations, mode='a',
                           predictions=None, bbox_from=BBox.X1Y1X2Y2, **bbox_args):
-        """external method for adding function to draw ground truth labels to stack"""
-        self._stack.append(lambda thresh: self._draw_ground_truth(annotations, missed_only,
-                          predictions, thresh, bbox_from, **bbox_args))
-    def _draw_ground_truth(self, annotations, missed_only, predictions, thresh, bbox_from, **bbox_args):
         """
         draw the ground truth bounding boxes
         Args:
             annotations: 'annotations' of COCO ground truth file
-            missed_only: flag whether to draw all ground truth bboxes or only ones with no 
-                detections, at the given level of confidence
-            predictions: list of predictions on self.img, only necessary if missed_only==True
-            thresh: confidence threshold for using predictions, only necessary if missed_only==True
+            mode: 'a'=draw all predictions, 'tp'=only true positives, 'fn'=only false negatives, 
+                'tpfn'=draw all predictions, but distinguished by true positives v. false negatives
+            predictions: list of predictions on self.img,  unnecessary if mode=='a'
             bbox_from: the BBox format of which the bounding boxes are in the form of 
             kwargs: arguments to be passed to _draw_bbox
+        Returns:
+            None
         """
+        modes = {'a', 'fn', 'tp', 'tpfn'}
+        if mode not in modes:
+            raise ValueError(f'mode must be one of {modes}')
+        self._stack.append(lambda thresh: self._draw_ground_truth(annotations, mode,
+                          predictions, thresh, bbox_from, **bbox_args))
+    def _draw_ground_truth(self, annotations, mode, predictions, thresh, bbox_from, **bbox_args):
+        """internal method for drawing ground truth labels to stack. see draw_ground_truth."""
 
         bboxes = set([tuple(a['bbox']) for a in annotations])
 
-        if missed_only:
-            conf_preds = [p for p in predictions if p['score'] > thresh]    # preds with high enough confidence
-
-            # remove all ground truth bboxes which were detected
-            for dt in conf_preds:
-                if dt['match'] is not None:
-                    bboxes.remove(dt['match']['bbox'])
-
-            color = 'orange'
-            self._categories.add(('false negatives', color))
-        else:
+        if mode == 'a':     # just draw all bounding boxes
             color = 'g'
             self._categories.add(('ground truth', color))
+            for bbox in bboxes:
+                self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=bbox_args, text_args=None)
+        
+        else:   # mode == 'tp', 'fn', or 'tpfn'
 
-        for bbox in bboxes:
-            self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=bbox_args, text_args=None)
+            conf_preds = [p for p in predictions if p['score'] > thresh]    # preds with high enough confidence
+            
+            # get false negative bounding boxes
+            fn_bboxes = bboxes.copy()
+            for dt in conf_preds:
+                if dt['match'] is not None:
+                    fn_bboxes.remove(dt['match']['bbox'])
+            
+            # true positive bounding boxes
+            tp_bboxes = bboxes - fn_bboxes
 
-    def draw_predictions(self, predictions, bbox_from=BBox.X1Y1X2Y2, bbox_args=None, text_args=None):
-        self._stack.append(lambda thresh: self._draw_predictions(predictions, thresh, bbox_from, bbox_args, text_args))
-    def _draw_predictions(self, predictions, thresh, bbox_from, bbox_args, text_args):
+            if 'tp' in mode:    # mode == 'tp' or 'tpfn'
+                color = 'g'
+                self._categories.add(('true positive ground truth', color))
+                for bbox in tp_bboxes:
+                    self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=bbox_args, text_args=None)
+            if 'fn' in mode:    # mode == 'fn' or 'tpfn'
+                color = 'orange'
+                self._categories.add(('false negative ground truth', color))
+                for bbox in fn_bboxes:
+                    self._draw_bbox(bbox, color=color, label=None, bbox_from=bbox_from, bbox_args=bbox_args, text_args=None)
+            
+    def draw_predictions(self, predictions, mode='tpfp', bbox_from=BBox.X1Y1X2Y2, bbox_args=None, text_args=None):
         """
         draw a list of COCO detections
         Args:
             predictions: list of predictions on self.img in the COCO format
-            thresh: the confidence threshold that predictions must exceed to be drawn
+            mode: 'a'=draw all predictions, 'tp'=draw only true positive predictions,
+                'fp'=draw only false positives, 'tpfp'=draw all, but distinguish between 
+                true positives and false positives
             bbox_from: the BBox format that each prediction's bbox is in
             bbox_args: dictionary of named arguments to be passed to _draw_box
             text_args: dictionary of named arguments to be passed to _draw_text
         """
-        # draw most confident first
+        modes = {'a', 'fp', 'tp', 'tpfp'}
+        if mode not in modes:
+            raise ValueError(f'mode must be one of {modes}')
+        self._stack.append(lambda thresh: self._draw_predictions(predictions, mode, thresh, bbox_from, bbox_args, text_args))
+    def _draw_predictions(self, predictions, mode, thresh, bbox_from, bbox_args, text_args):
+        """internal method for drawing predictions. see draw_predictions."""
+
+        # draw most confident last
         conf_preds = [p for p in predictions if p['score'] > thresh]
-        sorted_preds = sorted(conf_preds, key=lambda p: p['score'], reverse=True)
+        sorted_preds = sorted(conf_preds, key=lambda p: p['score'], reverse=False)
 
-        for p in conf_preds:
-            color = 'r' if p['match'] is None else 'b'
-            self._draw_bbox(p['bbox'], label=round(p['score'], 2), 
-            color=color, bbox_from=bbox_from, bbox_args=bbox_args, text_args=text_args)
+        preds = set()
+        if mode == 'a':
+            self._categories.add(('predictions', 'b'))
+            preds = set((tuple(p['bbox']), 'b', p['score']) for p in sorted_preds)
+        else:
+            if 'tp' in mode:    # mode == 'tp' or 'tpfp'
+                self._categories.add(('true positive predictions', 'b'))
+                preds |= set((tuple(p['bbox']), 'b', p['score']) for p in sorted_preds if p['match'] is not None)
+            if 'fp' in mode:    # mode == 'fp' or 'tpfp'
+                self._categories.add(('false positives', 'firebrick'))
+                preds |= set((tuple(p['bbox']), 'firebrick', p['score']) for p in sorted_preds if p['match'] is None)
+
+        for bbox, color, score in preds:
+            self._draw_bbox(bbox, label=round(score, 2), color=color, bbox_from=bbox_from,
+                            bbox_args=bbox_args, text_args=text_args)
         
-        self._categories |= {('true positives', 'b'), ('false positives', 'r')}
-
     def show(self, conf_thresh=0.5, show=True):
         """
         go through the stack of drawing functions and draw each set of bounding boxes at the 
@@ -272,14 +309,16 @@ class COCOVisualizer:
         # pre-calculate for O(1) look up
         self.predictions_by_imid = {im_id: [p for p in self.predictions if p['image_id'] == im_id] for im_id in range(len(self.ground_truth))}
 
-    def show_image(self, im_id, ground_truth=True, false_negatives_only=True, detections=True, conf_thresh=0.5, save_path=None):
+    def show_image(self, im_id, ground_truth_mode='tpfn', prediction_mode='tpfp', conf_thresh=0.5, save_path=None):
         """
         show the image with the given id
         Args:
-            ground_truth: True to show ground truth bboxes
-            false_negatives_only: if True (and ground_truth is True), then will only show ground 
-                truth bboxes that were not matched from any prediction
-            detection: True to show detection bboxes
+            ground_truth_mode: 'a'=draw all ground truth, 'tp'=draw only true positive ground truth, 
+                'fn'=draw only false negative ground truth, 'tpfn'=draw all ground truth, but 
+                differentiate true positive from false negatives, 'n'=don't draw ground truth
+            prediction_mode: 'a'=draw all predictions, 'tp'=draw only true positive predictions, 
+                'fp'=draw only false positives, 'tpfp'=draw all predictions, but 
+                differentiate true positive from false positives, 'n'=don't draw predictions
             conf_thresh: minimum confidence threshold to show detections / use detection to
                 calculate if ground truth label is detected
             save_path: where to save the image visualization, will not save if None
@@ -288,17 +327,24 @@ class COCOVisualizer:
             all predictions on im_id, regardless of confidence level
         """
 
+        gt_modes = {'a', 'tp', 'fn', 'tpfn', 'n'}
+        if ground_truth_mode not in gt_modes:
+            raise ValueError(f'ground_truth_mode must have value from: {gt_modes}')
+
+        dt_modes = {'a', 'tp', 'fp', 'tpfp', 'n'}
+        if prediction_mode not in dt_modes:
+            raise ValueError(f'prediction_mode must have value from: {dt_modes}')
+
         gt_obj = self.ground_truth[im_id]
         predictions = self.predictions_by_imid[im_id]
         im_path = gt_obj['file_name']
-        # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
         
         visualizer = Visualizer(cv2.imread(im_path), color_transform=cv2.COLOR_BGR2RGB)
-        if ground_truth:
-            visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=false_negatives_only, predictions=predictions)
+        if ground_truth_mode != 'n':
+            visualizer.draw_ground_truth(gt_obj['annotations'], mode=ground_truth_mode, predictions=predictions)
 
-        if detections:
-            visualizer.draw_predictions(predictions)
+        if prediction_mode != 'n':
+            visualizer.draw_predictions(predictions, mode=prediction_mode)
 
         visualizer.show(conf_thresh)
         if save_path is not None:
@@ -306,36 +352,65 @@ class COCOVisualizer:
 
         return gt_obj, predictions
 
-    def show_highest_conf_misses(self, n=1, save_dir=None):
+    def show_highest_conf_misses(self, n=1, im_id=None, ground_truth_mode='a', prediction_mode='n', save_dir=None):
         """
         show the highest confidence detections that were false positives
         Args:
             n: the number of high confidence false positives to show
+            im_id: image id to show miss for. if None, will show highest confidence miss on all images
+            ground_truth_mode: 'a'=draw all ground truth, 'tp'=draw only true positive ground truth, 
+                'fn'=draw only false negative ground truth, 'tpfn'=draw all ground truth, but 
+                differentiate true positive from false negatives, 'n'=don't draw ground truth
+            prediction_mode: 'a'=draw all predictions, 'tp'=draw only true positive predictions, 
+                'fp'=draw only false positives, 'tpfp'=draw all predictions, but 
+                differentiate true positive from false positives, 'n'=don't draw predictions
             save_dir: directory to save the visualizations in, None not to save
         Returns:
             list of n tuples ordered by descending confidence: (prediction, ground truth object)
         """
 
+        gt_modes = {'a', 'tp', 'fn', 'tpfn', 'n'}
+        if ground_truth_mode not in gt_modes:
+            raise ValueError(f'ground_truth_mode must have value from: {gt_modes}')
+
+        dt_modes = {'a', 'tp', 'fp', 'tpfp', 'n'}
+        if prediction_mode not in dt_modes:
+            raise ValueError(f'prediction_mode must have value from: {dt_modes}')
+
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
 
+        # restrict predictions to image if im_id is not None
+        predictions = self.predictions if im_id is None else [p for p in self.predictions if p['image_id'] == im_id]
+
+        # show the n highest confidence false positives
         already_shown = set()
         shown_data = []
         for conf_i in range(n):
-            i, first_wrong_pred = next(((i, d) for i, d in enumerate(self.predictions) if d['match'] is None and i not in already_shown), (-1, None))
+            i, first_wrong_pred = next(((i, d) for i, d in enumerate(predictions) if d['match'] is None and i not in already_shown), (-1, None))
             if first_wrong_pred is None:
                 print("NO MORE FALSE POSITIVES")
                 return shown_data
             already_shown.add(i)
 
-            first_wrong_im_obj = self.ground_truth[first_wrong_pred['image_id']]
+            # load the image and false positive bbox
+            im_id = first_wrong_pred['image_id']
+            first_wrong_im_obj = self.ground_truth[im_id]
             im_path = first_wrong_im_obj['file_name']
-            # im_path = 'data/dataset/' + first_wrong_im_obj['file_name'].split('/')[-1]
             im = cv2.imread(im_path)
             bbox = list(first_wrong_pred['bbox'])
+
+            # draw ground truth, predictions
             visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
-            visualizer.draw_ground_truth(first_wrong_im_obj['annotations'])
-            visualizer.draw_bbox(bbox, label=round(first_wrong_pred['score'], 2), color='r', bbox_from=BBox.X1Y1X2Y2)
+            im_predictions = [p for p in predictions if p['image_id'] == im_id]
+            if ground_truth_mode != 'n':
+                visualizer.draw_ground_truth(first_wrong_im_obj['annotations'], mode=ground_truth_mode, predictions=im_predictions)
+            if prediction_mode != 'n':
+                visualizer.draw_predictions(im_predictions, mode=prediction_mode)
+
+            # draw false positive + show
+            visualizer.draw_bbox(bbox, label=round(first_wrong_pred['score'], 2), color='orangered', bbox_from=BBox.X1Y1X2Y2)
+            visualizer.add_category('highest confidence false positive', 'orangered')
             visualizer.show()
 
             shown_data.append((first_wrong_pred, first_wrong_im_obj))
@@ -345,15 +420,28 @@ class COCOVisualizer:
 
         return shown_data
 
-    def show_unfound(self, conf_thresh=0, draw_predictions=False, save_dir=None):
+    def show_unfound(self, conf_thresh=0, ground_truth_mode='a', prediction_mode='n', save_dir=None):
         """
         show all bounding boxes that were not detected at the given level of confidence (false negatives)
         Args:
             conf_thresh: the threshold at which to a predictions must be to be counted
+            ground_truth_mode: 'fn'=draw only false negative ground truth, 'tpfn'=draw all ground truth, but 
+                differentiate true positive from false negatives
+            prediction_mode: 'a'=draw all predictions, 'tp'=draw only true positive predictions, 
+                'fp'=draw only false positives, 'tpfp'=draw all predictions, but 
+                differentiate true positive from false positives, 'n'=don't draw predictions
             save_dir: directory to save the visualizations in, None not to save
         Returns:
             list of sets of unfound bounding boxes, where index into list is the image id
         """
+
+        gt_modes = {'fn', 'tpfn'}
+        if ground_truth_mode not in gt_modes:
+            raise ValueError(f'ground_truth_mode must have value from: {gt_modes}')
+
+        dt_modes = {'a', 'tp', 'fp', 'tpfp', 'n'}
+        if prediction_mode not in dt_modes:
+            raise ValueError(f'prediction_mode must have value from: {dt_modes}')
 
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
@@ -373,12 +461,11 @@ class COCOVisualizer:
             # show the undetected bboxes
             if len(im_unfound_bboxes) > 0:
                 im_path = gt_obj['file_name']
-                # im_path = 'data/dataset/' + gt_obj['file_name'].split('/')[-1]
                 im = cv2.imread(im_path)
                 visualizer = Visualizer(im, color_transform=cv2.COLOR_BGR2RGB)
-                visualizer.draw_ground_truth(gt_obj['annotations'], missed_only=True, predictions=self.predictions_by_imid[im_id])
-                if draw_predictions:
-                    visualizer.draw_predictions(self.predictions_by_imid[im_id])
+                visualizer.draw_ground_truth(gt_obj['annotations'], mode=ground_truth_mode, predictions=self.predictions_by_imid[im_id])
+                if prediction_mode != 'n':
+                    visualizer.draw_predictions(self.predictions_by_imid[im_id], mode=prediction_mode)
                 visualizer.show(conf_thresh)
 
                 if save_dir is not None:
@@ -392,30 +479,33 @@ if __name__ == '__main__':
     # get ground truth and predictions
     coco_detection_fpath = 'data/coco_examples/coco_instances_results.json'
     coco_ground_truth_fpath = 'data/coco_examples/seed_test_coco_format.json'
-    # res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
-    #                     coco_ground_truth_fpath=coco_ground_truth_fpath,
-    #                      plot_dir=None)
-    # average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
+    res = summarize_coco(coco_detection_fpath=coco_detection_fpath,
+                        coco_ground_truth_fpath=coco_ground_truth_fpath,
+                         plot_dir=None)
+    average_precision, predictions, ground_truth, recall_lists, precision_lists = [x['seed'] if 'seed' in x else x for x in res]
 
-    # # get random image
+    # get random image
     # data_loc = 'data/dataset/'
     # random_id = np.random.choice(range(len(ground_truth)))
+    # random_id = 8
     # print(random_id)
     # random_img = ground_truth[random_id]
     # random_img['file_name'] = os.path.join(data_loc, random_img['file_name'].split('/')[-1])
     # random_img_dts = [p for p in predictions if p['image_id'] == random_id]
 
     # print('gt:', [gt['bbox'] for gt in random_img['annotations']])
-    # print('dt:', [dt['bbox'] for dt in random_img_dts])
+    # print('dt:', [[round(c, 2) for c in dt['bbox']] for dt in random_img_dts])
 
     # img = cv2.imread(random_img['file_name'])
 
     # vis = Visualizer(img, color_transform=cv2.COLOR_BGR2RGB)
-    # vis.draw_ground_truth(random_img['annotations'], missed_only=True, 
+    # vis.draw_ground_truth(random_img['annotations'], mode='tpfn', 
     #                     predictions=random_img_dts, bbox_from=BBox.X1Y1X2Y2)
-    # vis.draw_predictions(random_img_dts, bbox_from=BBox.X1Y1X2Y2, bbox_args={'linestyle': ":"}, text_args={'fontfamily': 'cursive'})
+    # vis.draw_predictions(random_img_dts, mode='tpfp', bbox_from=BBox.X1Y1X2Y2, bbox_args={'linestyle': ":"}, text_args={'fontfamily': 'cursive'})
     # vis.draw_bbox([100, 100, 110, 110], label='bbox', color='pink', bbox_from=BBox.X1Y1X2Y2)
     
+    # vis.show(0)
+
     # os.makedirs('output', exist_ok=True)
     # for i in [0.1, 0.5, 0.99]:
     #     vis.show(i)
@@ -425,8 +515,8 @@ if __name__ == '__main__':
     coco_vis = COCOVisualizer(coco_ground_truth_fpath, coco_detection_fpath, min_IoU=0.25)
 
     # for i in range(5):
-    #     coco_vis.show_image(i, detections=False, false_negatives_only=False, conf_thresh=0.5)
+    #     coco_vis.show_image(i, ground_truth_mode='fn', prediction_mode='tp', conf_thresh=0.5)
 
-    # coco_vis.show_highest_conf_misses(3, save_dir='output')
+    # coco_vis.show_highest_conf_misses(1, im_id=1, ground_truth_mode='tpfn', prediction_mode='fp', save_dir=None)
     for i in [0]:
-        coco_vis.show_unfound(i, draw_predictions=True, save_dir='output')
+        coco_vis.show_unfound(i, ground_truth_mode='tpfn', prediction_mode='tpfp', save_dir='output')
