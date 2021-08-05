@@ -420,7 +420,7 @@ class COCOVisualizer:
 
         return shown_data
 
-    def show_unfound(self, conf_thresh=0, ground_truth_mode='a', prediction_mode='n', save_dir=None):
+    def show_unfound(self, conf_thresh=0, ground_truth_mode='fn', prediction_mode='n', save_dir=None):
         """
         show all bounding boxes that were not detected at the given level of confidence (false negatives)
         Args:
